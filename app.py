@@ -2,11 +2,14 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 import datetime
 import os
+
+from sqlalchemy.orm import backref
 from flask_graphql import GraphQLView
 import graphene
 from flask_graphql_auth import GraphQLAuth,create_access_token,create_refresh_token,get_jwt_identity,mutation_jwt_refresh_token_required,query_header_jwt_required
 from werkzeug.security import generate_password_hash,check_password_hash
 from graphene_sqlalchemy import SQLAlchemyObjectType
+from graphene_sqlalchemy import SQLAlchemyConnectionField
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -35,6 +38,27 @@ class User(db.Model):
 
     def __str__(self) -> str:
         return self.username
+
+class Category(db.Model):
+    id = db.Column(db.Integer,primary_key=True)
+    name = db.Column(db.String(100),nullable=False)
+    product = db.relationship('Product',
+               foreign_keys='Product.category_id',
+               backref='product',
+               lazy=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+class Product(db.Model):
+    id = db.Column(db.Integer,primary_key=True)
+    name = db.Column(db.String(100),unique=True)
+    description = db.Column(db.Text())
+    price = db.Column(db.Float())
+    quantity = db.Column(db.Integer())
+    category_id = db.Column(db.Integer,db.ForeignKey('category.id'))
+
+
 
 
 
@@ -105,12 +129,8 @@ class UserType(SQLAlchemyObjectType):
         model = User
         interfaces = (graphene.relay.Node,)
 
-class Mutations(graphene.ObjectType):
-    register = Register.Field()
-    login = Login.Field()
-    refresh = Refresh.Field()
 
-class Query(graphene.ObjectType):
+class profileQuery(graphene.ObjectType):
     profile = graphene.Field(UserType)
 
     @classmethod
@@ -119,6 +139,82 @@ class Query(graphene.ObjectType):
         current_user = get_jwt_identity()
         return User.query.filter_by(id=current_user).first()
 
+class CategoryType(SQLAlchemyObjectType):
+    pk = graphene.Int(source='id')
+    class Meta:
+        model = Category
+        interfaces = (graphene.relay.Node,)
+
+class ProductType(SQLAlchemyObjectType):
+    pk = graphene.Int(source='id')
+    class Meta:
+        model = Product
+        interfaces = (graphene.relay.Node,)   
+
+class CategoryMutation(graphene.Mutation):
+    category = graphene.Field(CategoryType)
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    class Arguments:
+        name = graphene.String()
+    
+    @classmethod
+    def mutate(cls,_,info,name):
+        try:
+            category = Category(name=name)
+            return CategoryMutation(category=category,success=True)
+        except:
+            return CategoryMutation(error="something went wrong",success=False)
+
+
+class ProductMutation(graphene.Mutation):
+    product = graphene.Field(ProductType)
+    success = graphene.Boolean()
+    error = graphene.String()
+
+    class Arguments:
+        name = graphene.String()
+        description = graphene.String() 
+        price = graphene.Float()
+        quantity = graphene.Int()
+        category = graphene.Int()
+
+    @classmethod
+    def mutate(cls,_,info,name,description,price,quantity,category):
+        product = Product(
+            name = name,
+            description = description,
+            price = price,
+            quantity = quantity,
+            category_id = category
+        )
+        db.session.add(product)
+        db.session.commit()
+        return ProductMutation(product=product,success=True)
+
+class ProductQuery(graphene.ObjectType):
+    products = SQLAlchemyConnectionField(ProductType.connection)
+    product = graphene.Field(ProductType,pk=graphene.Int())
+
+    @classmethod
+    def resolve_products(cls,_,info):
+        return Product.query.all()
+
+    @classmethod
+    @query_header_jwt_required
+    def resolve_product(cls,_,info,pk):
+        return Product.query.get(pk)
+
+class Query(ProductQuery,profileQuery,graphene.ObjectType):
+    pass
+
+class Mutations(graphene.ObjectType):
+    register = Register.Field()
+    login = Login.Field()
+    refresh = Refresh.Field()
+    category = CategoryMutation.Field()
+    product = ProductMutation.Field()
 
 schema  = graphene.Schema(query=Query,mutation = Mutations)
 app.add_url_rule('/graphql', view_func=GraphQLView.as_view('Flask GraphQL', schema=schema, graphiql=True))
