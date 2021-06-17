@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 import datetime
 import os
 
@@ -21,7 +22,7 @@ app.config['JWT_SECRET_KEY'] = 'PRABHASH@198435'
 app.config['REFRESH_EXP_LENGTH'] = 30
 app.config['ACCESS_EXP_LENGTH'] = 10
 app.config['JWT_SECRET_KEY'] = 'Bearer'
-
+CORS(app)
 auth = GraphQLAuth(app)
 
 db = SQLAlchemy(app)
@@ -163,6 +164,8 @@ class CategoryMutation(graphene.Mutation):
     def mutate(cls,_,info,name):
         try:
             category = Category(name=name)
+            db.session.add(category)
+            db.session.commit()
             return CategoryMutation(category=category,success=True)
         except:
             return CategoryMutation(error="something went wrong",success=False)
@@ -194,7 +197,8 @@ class ProductMutation(graphene.Mutation):
         return ProductMutation(product=product,success=True)
 
 class ProductQuery(graphene.ObjectType):
-    products = SQLAlchemyConnectionField(ProductType.connection)
+    
+    products = SQLAlchemyConnectionField(ProductType.connection,sort=None)
     product = graphene.Field(ProductType,pk=graphene.Int())
 
     @classmethod
@@ -202,7 +206,6 @@ class ProductQuery(graphene.ObjectType):
         return Product.query.all()
 
     @classmethod
-    @query_header_jwt_required
     def resolve_product(cls,_,info,pk):
         return Product.query.get(pk)
 

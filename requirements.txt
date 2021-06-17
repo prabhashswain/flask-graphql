@@ -1,6 +1,7 @@
 aniso8601==7.0.0
 click==8.0.1
 Flask==2.0.1
+Flask-Cors==3.0.10
 Flask-GraphQL==2.0.1
 Flask-GraphQL-Auth==1.3.3
 Flask-SQLAlchemy==2.5.1
